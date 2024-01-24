@@ -20,18 +20,32 @@ namespace DbScript
 
                 using (var context = new PostgresContext())
                 {
+                    DateTime dateTime = DateTime.Now;
+                    DateTime startDate = new DateTime(2024, 1, 16);
+                    DateTime endDate = new DateTime(2024, 1, 17);
+
                     var dataRetrievalService = new DataRetrivalService(context);
+
                     var nodeHistoryData = dataRetrievalService.GetNodeHistoryData();
 
-                    var fileInfo = new FileInfo("testFileEnd.xlsx");
+                    double averagePvValue = nodeHistoryData
+                        .Where(data => data.Valdouble.HasValue
+                        && data.Actualtime >= startDate && data.Actualtime <= endDate)
+                        .Average(data => data.Valdouble.Value);
+
+                    var fileInfo = new FileInfo("test.xlsx");
+
+                    //if (fileInfo.Exists)
+                    //{
+                    //    fileInfo.Delete();
+                    //}
 
                     using (var excelPackage = new ExcelPackage(fileInfo))
                     {
-                        var worksheet = excelPackage.Workbook.Worksheets.Add("test");
+                        var worksheet = excelPackage.Workbook.Worksheets["Kotl"];
 
-                        worksheet.Cells.LoadFromCollection(nodeHistoryData, true);
-
-                        worksheet.Cells.AutoFitColumns();
+                        worksheet.Cells["G8"].Value = averagePvValue;
+                        worksheet.Cells["D8"].Value = dateTime;
 
                         excelPackage.Save();
                     }
