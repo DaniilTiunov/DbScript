@@ -1,0 +1,85 @@
+﻿var startOfDay = DateTime.Today;
+var endOfDay = startOfDay.AddDays(1);
+
+var groupedData = nodeHistoryData
+    .Where(data => data.Valdouble.HasValue
+        && data.Actualtime >= startOfDay && data.Actualtime < endOfDay
+        && data.Tagname == "REGUL_SMC306_07.01_AI.CRATE03_AI12.TI0142_4200.PV.DATA_VALUE")
+    .GroupBy(data => new { Hour = data.Actualtime?.Hour / 2 });
+
+// Использовать уже на станции, так как получает текущие даты на компе, а у меня данных нет
+
+
+//Полурабочая версия
+////////////////////////////////////////////////////////////////////////////////////////////
+using DbScript.Database.Views;
+using DbScript.DBContext;
+using DbScript.Excel;
+using DbScript.Service;
+using LargeXlsx;
+using Microsoft.EntityFrameworkCore;
+using OfficeOpenXml;
+using System.Diagnostics;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+
+namespace DbScript
+{
+    public class Program
+    {
+        static void Main(string[] args)
+        {
+            try
+            {
+                Stopwatch stopwatch = new(); // Инициализируем таймер
+                stopwatch.Start(); // Запускаем таймер
+
+                using (var context = new PostgresContext())
+                {
+                    DateTime dateTime = DateTime.Now;
+                    DateTime today = DateTime.Today;
+                    DateTime startTime = today.AddHours(22); // Начало интервала сегодняшнего дня с 00:00
+                    DateTime endTime = today.AddHours(24); // Конец интервала сегодняшнего дня + 2 часа
+
+                    var dataRetrievalService = new DataRetrivalService(context); // Инициализируем сервис для получения данных
+                    var nodeHistoryData = dataRetrievalService.GetNodeHistoryData();
+
+                    // Разделение данных на группы по периодам времени с интервалом в 2 часа
+                    var groupedData = nodeHistoryData
+                                     .Where(data => data.Valdouble.HasValue
+                                         && data.Actualtime >= startTime && data.Actualtime < endTime
+                                         && data.Tagname == "REGUL_SMC306_07.01_AI.CRATE03_AI12.TI0142_4200.PV.DATA_VALUE")
+                                     .GroupBy(data => new { Interval = data.Actualtime?.Hour / 2 });
+
+                    var fileInfo = new FileInfo("test.xlsx");
+
+                    using (var excelPackage = new ExcelPackage(fileInfo))
+                    {
+                        var worksheet = excelPackage.Workbook.Worksheets["Kotl"];
+
+                        int rowIndex = 8; // Начальная строка для записи данных
+
+                        foreach (var group in groupedData)
+                        {
+                            var averagePvValue = group.Any() ? group.Average(data => data.Valdouble.Value) : 0.0; // Если данных нет, используем значение по умолчанию 0.0
+                            worksheet.Cells[$"G{rowIndex}"].Value = averagePvValue; // Запись среднего значения в ячейку G{rowIndex}
+                            rowIndex++; // Переход к следующей строке
+                        }
+
+                        worksheet.Cells["D8"].Value = today; // Запись текущей даты в ячейку D8
+
+                        excelPackage.Save();
+                    }
+
+                    Console.WriteLine("Данные успешно экспортированы в Excel.");
+                }
+
+                stopwatch.Stop(); // Останавливаем таймер 
+                Console.WriteLine($"Время работы программы - {stopwatch.ElapsedMilliseconds} мс"); // Выводим время работы программы
+            }
+            catch (Exception ex) // При возникновении ошибки выводим ее в консоль 
+            {
+                Console.WriteLine($"Источник проблемы: {ex.Source},\nСообщение: {ex.Message}"); // Выводим источник проблемы и сообщение 
+            }         
+        }
+    }
+}

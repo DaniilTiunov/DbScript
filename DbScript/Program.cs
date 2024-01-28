@@ -1,64 +1,88 @@
 ﻿using DbScript.Database.Views;
 using DbScript.DBContext;
-using DbScript.Excel;
-using DbScript.Service;
-using LargeXlsx;
 using Microsoft.EntityFrameworkCore;
 using OfficeOpenXml;
 using System.Diagnostics;
 
+
 namespace DbScript
-{
+{    
     public class Program
     {
         static void Main(string[] args)
         {
             try
             {
-                Stopwatch stopwatch = new(); // Инициализируем таймер
-                stopwatch.Start(); // Запускаем таймер
+                Stopwatch stopwatch = new Stopwatch();
+                stopwatch.Start();
 
-                using (var context = new PostgresContext())
+                using PostgresContext context = new PostgresContext();
+
+                Device[] devices = {
+                    new Device("REGUL_SMC306_07.01_AI.CRATE03_AI12.TI0142_4200.PV.DATA_VALUE", "G"),
+                    new Device("REGUL_SMC306_07.01_AI.CRATE03_AI12.TI0143_4200.PV.DATA_VALUE", "H"),
+                    new Device("REGUL_SMC306_07.01_AI.CRATE01_AI00.GAI1001_4200.PV.DATA_VALUE", "J"),
+
+                };
+
+                string[] availableDevices = devices.Select(device => device.Name).ToArray();
+                IEnumerable<Nodehistoryview> devicesData = context.Nodehistoryviews
+                    .Where(node => availableDevices.Contains(node.Tagname))
+                    .AsNoTracking()
+                    .AsEnumerable();
+
+                if (devicesData.Any())
                 {
-                    DateTime dateTime = DateTime.Now;
-                    DateTime startDate = new DateTime(2024, 1, 16);
-                    DateTime endDate = new DateTime(2024, 1, 17);
+                    FileInfo fileInfo = new FileInfo("test.xlsx");
+                    using ExcelPackage excelPackage = new ExcelPackage(fileInfo);
+                    var worksheet = excelPackage.Workbook.Worksheets["Kotl"];
 
-                    var dataRetrievalService = new DataRetrivalService(context);
-
-                    var nodeHistoryData = dataRetrievalService.GetNodeHistoryData();
-
-                    double averagePvValue = nodeHistoryData
-                        .Where(data => data.Valdouble.HasValue
-                        && data.Actualtime >= startDate && data.Actualtime <= endDate)
-                        .Average(data => data.Valdouble.Value);
-
-                    var fileInfo = new FileInfo("test.xlsx");
-
-                    //if (fileInfo.Exists)
-                    //{
-                    //    fileInfo.Delete();
-                    //}
-
-                    using (var excelPackage = new ExcelPackage(fileInfo))
+                    foreach (Device device in devices)
                     {
-                        var worksheet = excelPackage.Workbook.Worksheets["Kotl"];
+                        IEnumerable<Nodehistoryview> history = devicesData.Where(node => node.Tagname.Equals(device.Name)).AsEnumerable();
+                        int startRow = 8;
 
-                        worksheet.Cells["G8"].Value = averagePvValue;
-                        worksheet.Cells["D8"].Value = dateTime;
+                        if (!history.Any())
+                        {
+                            continue;
+                        }
 
-                        excelPackage.Save();
+                        DateTime startTime = (DateTime.Today).AddHours(-2);
+                        DateTime endTime = startTime.AddHours(2);
+
+                        for (int k = 0; k < 12; k++)
+                        {
+                            IEnumerable<double> values = history
+                                .Where(node => node.Actualtime >= startTime && node.Actualtime <= endTime)
+                                .Select(node => node.Valdouble ?? .0)
+                                .AsEnumerable();
+
+                            double average = values.Any() ? values.Average() : .0;
+
+                            Console.WriteLine($"{device.Name} {startTime:HH:mm} - {endTime:HH:mm} avg = {Math.Round(average, 2)}");
+
+                            string cell = $"{device.Column}{startRow++}";
+
+                            worksheet.Cells[cell].Value = average;
+
+                            startTime = startTime.AddHours(2);
+                            endTime = endTime.AddHours(2);
+                        }
                     }
 
-                    Console.WriteLine("Данные успешно экспортированы в Excel.");
+                    excelPackage.Save();
+                }
+                else
+                {
+                    Console.WriteLine("Данные не получены");
                 }
 
-                stopwatch.Stop(); // Останавливаем таймер 
-                Console.WriteLine($"Время работы программы - {stopwatch.ElapsedMilliseconds} мс"); // Выводим время работы программы
+                stopwatch.Stop();
+                Console.WriteLine($"Время работы программы - {stopwatch.ElapsedMilliseconds} мс");
             }
-            catch (Exception ex) // При возникновении ошибки выводим ее в консоль 
+            catch (Exception ex)
             {
-                Console.WriteLine($"Источник проблемы: {ex.Source},\nСообщение: {ex.Message}"); // Выводим источник проблемы и сообщение 
+                Console.WriteLine($"Источник проблемы: {ex.Source},\nСообщение: {ex.Message}");
             }
         }
     }
